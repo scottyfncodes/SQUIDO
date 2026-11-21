@@ -605,6 +605,26 @@ class Game {
     }
   }
 
+  /** A live, read-only view of the dive for measurement tools: state, score, depth and growth. */
+  measure(): Record<string, unknown> {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const g = this;
+    const view = {} as Record<string, unknown>;
+    const get = (k: string, f: () => unknown) => Object.defineProperty(view, k, { get: f, enumerable: true });
+    get('state', () => (g.state === 'title' ? 'title' : g.state === 'results' ? 'over' : 'playing'));
+    get('phase', () => g.state);
+    get('score', () => g.world.run.score);
+    get('time', () => Math.round(g.world.time * 10) / 10);
+    get('depth', () => Math.round(depthMeters(g.world.player.y)));
+    get('maxDepth', () => Math.round(depthMeters(g.world.run.maxDepth)));
+    get('growth', () => Math.round(g.world.player.food * 10) / 10);
+    get('mutations', () => g.world.player.mutations.length);
+    get('chain', () => g.world.combo);
+    get('charges', () => g.world.player.charges);
+    get('alive', () => g.world.player.alive);
+    return view;
+  }
+
   /** How far the camera lifts the octopus above the Evolve cards: phones stack the cards higher, so it rises further. */
   private evolveLift(): number {
     return this.renderer.w > this.renderer.h ? 0.3 : 0.37;
@@ -1265,6 +1285,8 @@ function boot(): void {
       };
       Promise.race([document.fonts?.ready ?? Promise.resolve(), new Promise((r) => setTimeout(r, 1200))]).then(hide, hide);
     }
+    // Read-only numbers for automated play measurement (no controls, nothing that changes the game).
+    Object.defineProperty(window, '__game', { value: game.measure(), configurable: true });
     // Opt-in handle for automated playtesting: ?debug
     if (new URLSearchParams(location.search).has('debug')) Object.assign(window, { squido: game, jelli: game, jelliSpecies: SPECIES_BY_ID });
   } catch (err) {
