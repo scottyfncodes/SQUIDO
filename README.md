@@ -30,7 +30,7 @@ Some identifiers keep the old name on purpose, because changing them would lose 
 - Your tentacles do the hunting: swim past anything wearing a cyan ring and a trailing arm snags it and reels it in. Every meal makes the arms a little longer. Heavy prey can wriggle free, and arms can't reach through coral.
 - **Sweep:** every burst flings all your arms out as a net. Everything edible in the fan ahead of you for that instant is snagged at once and reeled in together, and the score climbs with the square of the haul. Aim the burst through a school before it scatters. The catch: the burst you sweep with is the burst you'd escape with.
 - Red eyes, a `!` and a dashed lunge line warn of a hunter about to strike.
-- **Forgiving input:** a Jet pressed just before a charge returns fires the moment it lands, steering into reef slides the octopus around the rock, and a tap on open water leaves a ripple so no tap goes unanswered. Each first-dive tip steps aside after a few seconds if you'd rather find things out yourself.
+- **Forgiving input:** a Jet pressed just before a charge returns fires the moment it lands, steering into reef slides the octopus around the rock, and a tap on open water leaves a ripple so no tap goes unanswered. Each first-dive tip steps aside after a few seconds if you'd rather find things out yourself; a lash or Jet tip you skipped comes back once on your next dive, and never once you've used it.
 - **Haptics:** on phones that support it, a short vibration marks a jet, a big sweep, a full growth meter and a bite. Reduced motion turns it off.
 
 ## The ocean

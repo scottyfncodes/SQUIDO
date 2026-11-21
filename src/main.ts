@@ -21,6 +21,8 @@ import { SKINS_BY_ID, TRAITS_BY_ID } from './content/unlocks';
 import { WORLD } from './content/world';
 import { POWERS } from './content/powerups';
 import { clamp } from './core/math';
+import { learn, markReminded, remindersFor, type Lesson } from './core/tutorial';
+import { toastFloor } from './ui/layout';
 import { comboMult } from './sim/rules';
 import { PKind } from './render/particles';
 import {
@@ -79,6 +81,8 @@ class Game {
   private resultsTimer = 0;
   private hudCache = Game.freshHud();
   private tutorial = { step: 0, t: 0, eats: 0 };
+  /** Lessons a returning player skipped last time, repeated once each at the start of this dive. */
+  private reminders: Lesson[] = [];
   /** Personal best when this run began, for the mid-run "new best" moment. */
   private bestAtStart = 0;
   /** Biggest sweep on record when this run began, for the mid-run record moment. */
@@ -202,6 +206,7 @@ class Game {
     if (this.state === 'title') this.frameTitle();
     else this.renderer.focusOffset = this.renderer.h * (this.state === 'evolve' ? this.evolveLift() : 0.12);
     this.syncView();
+    this.layoutHint();
   }
 
   private syncView(): void {
@@ -446,10 +451,11 @@ class Game {
     this.said.clear();
     this.hudCache = Game.freshHud();
     this.tutorial = { step: this.save.tutorialDone ? 99 : 0, t: 0, eats: 0 };
-    // Players who learned to swim before the lash existed get one line about it.
-    if (this.save.tutorialDone && !this.save.tips.includes('lash')) {
+    // A lesson whose line timed out unanswered last dive comes back once, so skipping the tutorial never skips the lash or the Jet.
+    this.reminders = remindersFor(this.save);
+    if (this.reminders.length) {
       this.tutorial.step = 50;
-      this.save.tips.push('lash');
+      markReminded(this.save, this.reminders);
       this.persist();
     }
     this.updateHint();
@@ -1135,7 +1141,10 @@ class Game {
     const combo = w.combo >= 2 ? w.combo : 0;
     if (combo !== c.combo) {
       c.combo = combo;
-      ui.combo.classList.toggle('show', combo > 0);
+      if (ui.combo.classList.contains('show') !== combo > 0) {
+        ui.combo.classList.toggle('show', combo > 0);
+        this.layoutHint();
+      }
       ui.combo.classList.toggle('hot', combo >= 5);
       if (combo) {
         ui.comboN.textContent = `Chain ${combo}`;
@@ -1213,6 +1222,8 @@ class Game {
   private tutorialSignal(kind: 'eat' | 'burst' | 'lash'): void {
     const t = this.tutorial;
     if (this.state !== 'play') return;
+    const lesson: Lesson | null = kind === 'lash' ? 'lash' : kind === 'burst' ? 'jet' : null;
+    if (lesson && learn(this.save, lesson)) this.persist();
     if (t.step === 1 && kind === 'eat') {
       t.eats++;
       if (t.eats >= 3) this.advanceTutorial();
@@ -1220,11 +1231,16 @@ class Game {
       this.advanceTutorial();
     } else if (t.step === 3 && kind === 'burst') {
       this.advanceTutorial();
-    } else if (t.step === 50 && kind === 'lash') {
-      // A returning player has learned the lash.
-      t.step = 99;
-      this.updateHint();
+    } else if (t.step === 50 && lesson && lesson === this.reminders[0]) {
+      this.nextReminder();
     }
+  }
+
+  private nextReminder(): void {
+    this.reminders.shift();
+    this.tutorial.t = 0;
+    if (!this.reminders.length) this.tutorial.step = 99;
+    this.updateHint();
   }
 
   private advanceTutorial(): void {
@@ -1244,10 +1260,7 @@ class Game {
       if (t.t > TUTORIAL_PATIENCE) this.advanceTutorial();
     } else if (t.step === 50) {
       t.t += dt;
-      if (t.t > TUTORIAL_PATIENCE) {
-        t.step = 99;
-        this.updateHint();
-      }
+      if (t.t > TUTORIAL_PATIENCE) this.nextReminder();
     } else if (t.step === 4) {
       t.t += dt;
       if (t.t > 4.5) {
@@ -1267,9 +1280,21 @@ class Game {
       TOUCH ? 'Tap <b>Jet</b> into a group of prey: every arm sweeps up what is ahead' : 'Press <kbd>Space</kbd> to jet into a group of prey and sweep it up',
       'Eat and explore to fill the growth meter, then choose how you change',
     ];
-    const text = this.tutorial.step === 50 ? (TOUCH ? '<b>New:</b> tap prey or pearls further off and an arm lashes out for them' : '<b>New:</b> click prey or pearls further off and an arm lashes out for them') : steps[this.tutorial.step];
+    const text = this.tutorial.step === 50 ? steps[this.reminders[0] === 'jet' ? 3 : 2] : steps[this.tutorial.step];
     this.ui.hint.classList.toggle('show', !!text);
     if (text) this.ui.hint.innerHTML = text;
+    this.layoutHint();
+  }
+
+  /** Small notices stack upward from just above the tutorial line, wherever it sits, so the two never cover each other. */
+  private layoutHint(): void {
+    const hint = this.ui.hint;
+    const hud = hint.parentElement;
+    if (!hud) return;
+    const shown = hint.classList.contains('show');
+    const lift = shown && this.ui.combo.classList.contains('show') ? parseFloat(getComputedStyle(hint).getPropertyValue('--hint-lift')) || 0 : 0;
+    const floor = toastFloor({ shown, bottom: parseFloat(getComputedStyle(hint).bottom) || 0, height: hint.offsetHeight, lift });
+    hud.style.setProperty('--toast-floor', `${floor}px`);
   }
 }
 

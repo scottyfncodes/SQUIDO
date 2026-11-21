@@ -664,9 +664,16 @@ h2 {
 }
 
 /* A running chain owns the bottom of the screen: the tutorial line rises above its meter instead of sitting on it. */
+.hint {
+  --hint-lift: 0px;
+}
+
 @media (min-height: 481px) {
+  .hint {
+    --hint-lift: 64px;
+  }
   .hud:has(.combo.show) .hint {
-    transform: translateX(-50%) translateY(-64px);
+    transform: translateX(-50%) translateY(calc(-1 * var(--hint-lift)));
   }
 }
 
@@ -2544,9 +2551,10 @@ body.reduced-motion .title.is-open .title-actions > * {
     0 1px 0 rgba(160, 255, 240, 0.16) inset;
 }
 
-/* Notices keep clear of the octopus: big banners up top, small pills low, above the hint. */
+/* Notices keep clear of the octopus: big banners up top, small pills low, above the hint (wherever it sits: --toast-floor is set from it). */
 .toasts {
-  bottom: calc(var(--sab) + 196px);
+  bottom: max(calc(var(--sab) + 196px), var(--toast-floor, 0px));
+  transition: bottom var(--t-med) var(--ease);
   justify-content: flex-start;
 }
 

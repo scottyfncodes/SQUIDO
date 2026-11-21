@@ -73,4 +73,68 @@ describe('reef contact', () => {
     for (let i = 0; i < 30; i++) w.update(1 / 60, { ax: 1, ay: 0, burst: false });
     expect(p.x).toBeGreaterThan(x0 + 20);
   });
+
+  /** Clears the generated reef and places these rocks, in every grid cell they touch. */
+  function placeReef(w: World, rocks: { x: number; y: number; r: number }[]) {
+    w.coralGrid.clear();
+    for (const c of rocks)
+      for (let gx = Math.floor((c.x - c.r - 60) / 200); gx <= Math.floor((c.x + c.r + 60) / 200); gx++)
+        for (let gy = Math.floor((c.y - c.r - 60) / 200); gy <= Math.floor((c.y + c.r + 60) / 200); gy++) {
+          const k = gx * 1000 + gy;
+          if (!w.coralGrid.has(k)) w.coralGrid.set(k, []);
+          w.coralGrid.get(k)!.push(c);
+        }
+  }
+
+  it('dead centre on a dome in the middle of the shaft: slides off one way, without rocking back and forth', () => {
+    const w = makeWorld();
+    const p = w.player;
+    const dome = { x: w.width / 2, y: 3000, r: 120 };
+    placeReef(w, [dome]);
+    p.x = dome.x;
+    p.y = dome.y - dome.r - p.r * 0.7;
+    p.vx = p.vy = 0;
+    let flips = 0;
+    let lastDir = 0;
+    let passed = -1;
+    for (let i = 0; i < 60 * 3; i++) {
+      const x0 = p.x;
+      w.update(1 / 60, { ax: 0, ay: 1, burst: false });
+      const dx = p.x - x0;
+      if (Math.abs(dx) > 0.05) {
+        if (lastDir && Math.sign(dx) !== lastDir) flips++;
+        lastDir = Math.sign(dx);
+      }
+      if (passed < 0 && p.y > dome.y) passed = i / 60;
+    }
+    expect(passed).toBeGreaterThan(0);
+    expect(passed).toBeLessThan(2);
+    expect(flips).toBeLessThanOrEqual(1);
+  });
+
+  it('steering straight up into the underside of a dome also slides around it', () => {
+    const w = makeWorld();
+    const p = w.player;
+    const dome = { x: w.width / 2, y: 3000, r: 120 };
+    placeReef(w, [dome]);
+    p.x = dome.x;
+    p.y = dome.y + dome.r + p.r * 0.7;
+    for (let i = 0; i < 60 * 4; i++) w.update(1 / 60, { ax: 0, ay: -1, burst: false });
+    expect(p.y).toBeLessThan(dome.y);
+  });
+
+  it('the slide never squeezes a body through a gap narrower than it', () => {
+    const w = makeWorld();
+    const p = w.player;
+    const gap = p.r * 0.8;
+    placeReef(w, [
+      { x: 1500 - 100 - gap / 2, y: 3000, r: 100 },
+      { x: 1500 + 100 + gap / 2, y: 3000, r: 100 },
+    ]);
+    p.x = 1500;
+    p.y = 2850;
+    for (let i = 0; i < 60 * 6; i++) w.update(1 / 60, { ax: 0, ay: 1, burst: false });
+    expect(p.y).toBeLessThan(3000);
+  });
 });
+
