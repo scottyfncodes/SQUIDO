@@ -1157,7 +1157,7 @@ export class World {
     this.jetQueued = Math.max(0, this.jetQueued - dt);
     p.burstT = Math.max(0, p.burstT - dt);
 
-    // Steering into reef slides along it, toward the side the stroke leans (or away from the rock's middle when it is dead on).
+    // Steering into reef slides along it, toward the side the stroke leans.
     const rn = this.reefN;
     if ((rn.x || rn.y) && mag > 0.2) {
       const into = ax * rn.x + ay * rn.y;
@@ -1165,7 +1165,9 @@ export class World {
         const tx = -rn.y;
         const ty = rn.x;
         let side = ax * tx + ay * ty;
-        if (Math.abs(side) < 0.15 * mag) side = (tx * (p.x - this.width / 2) >= 0 ? -1 : 1) * 0.15 * mag;
+        // Dead on: keep going the way the body already leans or drifts off the rock's crown. That choice only grows as it slides,
+        // so the octopus commits to one side instead of rocking back and forth across the top.
+        if (Math.abs(side) < 0.15 * mag) side = (Math.sign(side) || Math.sign(p.vx * tx + p.vy * ty) || 1) * 0.15 * mag;
         const push = accel * REEF_SLIDE * Math.min(1, -into / mag) * Math.sign(side) * dt;
         p.vx += tx * push;
         p.vy += ty * push;
