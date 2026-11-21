@@ -46,6 +46,9 @@ import {
 type State = 'title' | 'play' | 'paused' | 'results' | 'evolve';
 type Overlay = 'guide' | 'lineage' | 'settings' | null;
 
+/** Seconds a tutorial line waits for its action before it steps aside. */
+const TUTORIAL_PATIENCE = 9;
+
 const TOUCH = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
 class Game {
@@ -185,7 +188,7 @@ class Game {
     this.app.addEventListener(
       'touchmove',
       (e) => {
-        if (!(e.target as HTMLElement).closest('.results, .sheet')) e.preventDefault();
+        if (!(e.target as HTMLElement).closest('.results, .sheet, .evolve')) e.preventDefault();
       },
       { passive: false },
     );
@@ -197,7 +200,7 @@ class Game {
     const h = this.app.clientHeight;
     this.renderer.resize(w, h, Math.min(2, window.devicePixelRatio || 1));
     if (this.state === 'title') this.frameTitle();
-    else this.renderer.focusOffset = this.renderer.h * 0.12;
+    else this.renderer.focusOffset = this.renderer.h * (this.state === 'evolve' ? this.evolveLift() : 0.12);
     this.syncView();
   }
 
@@ -575,6 +578,7 @@ class Game {
       r.render(this.world, dt, null);
     } else if (this.state === 'evolve') {
       // The world holds still while the body changes, but the octopus keeps breathing and blinking.
+      r.updateCamera(this.world, dt);
       r.render(this.world, dt, null);
     } else {
       // Paused: the world holds still and the octopus dozes, breathing out a slow bubble now and then.
@@ -595,7 +599,25 @@ class Game {
     const wx = (sx - r.w / 2) / r.zoom + r.camX;
     const wy = (sy - r.h / 2) / r.zoom + r.camY;
     // Fingers are big: anything within about 40 screen pixels of the tap counts.
-    this.world.lash(wx, wy, 40 / r.zoom);
+    if (this.world.lash(wx, wy, 40 / r.zoom) === 'none') {
+      // Nothing there to strike: a small ripple where the finger landed, so no tap goes unanswered.
+      r.particles.emit(PKind.Ring, wx, wy, 0, 0, 0.4, 5 / r.zoom, '#cfeaff', 34 / r.zoom, 0);
+    }
+  }
+
+  /** How far the camera lifts the octopus above the Evolve cards: phones stack the cards higher, so it rises further. */
+  private evolveLift(): number {
+    return this.renderer.w > this.renderer.h ? 0.3 : 0.37;
+  }
+
+  /** A short vibration on the moments that matter, where the device has one. Reduced motion keeps the phone still. */
+  private buzz(pattern: number | number[]): void {
+    if (this.reducedMotion() || typeof navigator.vibrate !== 'function') return;
+    try {
+      navigator.vibrate(pattern);
+    } catch {
+      /* some browsers refuse vibration without a gesture */
+    }
   }
 
   /** The growth meter filled: stop the world and offer three mutations. */
@@ -610,6 +632,9 @@ class Game {
     this.input.enabled = false;
     this.input.reset();
     const p = w.player;
+    // Lift the octopus above the cards: the body that is about to change should be in view, not behind the heading.
+    this.renderer.focusOffset = this.renderer.h * this.evolveLift();
+    this.renderer.focusOffsetX = 0;
     renderEvolve(this.ui, offers, { style: this.renderer.playerStyle, mutations: p.mutations, forms: p.forms, maturity: maturity(p.food), personality: p.personality, variant: this.renderer.playerVariant }, w.pendingEvolutions);
     this.show('evolve', true);
   }
@@ -619,6 +644,7 @@ class Game {
     if (!this.world.chooseMutation(id)) return;
     this.handleEvents(0);
     this.show('evolve', false);
+    this.renderer.focusOffset = this.renderer.h * 0.12;
     this.state = 'play';
     this.input.enabled = true;
     this.last = performance.now();
@@ -715,7 +741,10 @@ class Game {
         ps.emit(PKind.Ring, e.x, e.y, 0, 0, 0.6, p.r, color, 140 + e.n * 22, 0);
         ps.burst(e.x, e.y, 10 + e.n * 4, 120 + e.n * 18, 3, color, 0.7);
         this.renderer.addShake(Math.min(0.5, 0.08 + e.n * 0.04));
-        if (e.n >= 4) this.freeze(Math.min(0.14, 0.04 + e.n * 0.012), 0.08);
+        if (e.n >= 4) {
+          this.freeze(Math.min(0.14, 0.04 + e.n * 0.012), 0.08);
+          this.buzz(Math.min(50, 18 + e.n * 4));
+        }
         const record = e.n > this.sweepRecord && e.n >= 3;
         if (record) this.sweepRecord = e.n;
         this.callout(`Sweep ×${e.n}`, record ? `New record · +${fmt(e.bonus)}` : `+${fmt(e.bonus)}`, record, e.n >= 6);
@@ -726,6 +755,7 @@ class Game {
         ps.emit(PKind.Ring, e.x, e.y, 0, 0, 0.5, p.r * 0.9, p.mutations.includes('jet-siphon') ? '#5ee0d0' : '#bfe9ff', 160, 0);
         for (let i = 0; i < 6; i++) ps.emit(PKind.Bubble, e.x, e.y, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, 1.2, 1.5 + Math.random() * 3, '#fff', 0.5, 2);
         this.audio.burst();
+        this.buzz(12);
         break;
       case 'nova':
         ps.emit(PKind.Ring, e.x, e.y, 0, 0, 0.6, p.r, '#c59bff', e.r * 1.6, 0);
@@ -748,6 +778,7 @@ class Game {
         this.renderer.addShake(0.8);
         this.freeze(0.55, 0.2);
         this.audio.caught();
+        this.buzz([40, 30, 60]);
         break;
       case 'discover': {
         this.renderer.wonder();
@@ -791,6 +822,7 @@ class Game {
       case 'evolveReady':
         // The meter is full: the evolution choice opens once this frame's events are done.
         this.audio.ready();
+        this.buzz(30);
         break;
       case 'mutate': {
         const m = MUTATIONS_BY_ID[e.id];
@@ -1186,6 +1218,16 @@ class Game {
     if (t.step === 0 && Math.hypot(this.simInput.ax, this.simInput.ay) > 0.3) {
       t.t += dt;
       if (t.t > 0.9) this.advanceTutorial();
+    } else if (t.step >= 1 && t.step <= 3) {
+      // A line the player hasn't acted on steps aside after a fair wait instead of covering the water for the whole dive.
+      t.t += dt;
+      if (t.t > TUTORIAL_PATIENCE) this.advanceTutorial();
+    } else if (t.step === 50) {
+      t.t += dt;
+      if (t.t > TUTORIAL_PATIENCE) {
+        t.step = 99;
+        this.updateHint();
+      }
     } else if (t.step === 4) {
       t.t += dt;
       if (t.t > 4.5) {

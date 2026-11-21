@@ -361,6 +361,10 @@ export const WRECK_HULL: [number, number, number][] = [
 const SINK_BOOST = 0.3;
 const RISE_DRAG = 0.25;
 const IDLE_SINK = 40;
+/** A Jet pressed this long before a charge returns is held and fires the moment it lands. */
+const JET_BUFFER = 0.2;
+/** Pushing into reef turns this share of the stroke into a slide along the rock, so the body flows around stone. */
+const REEF_SLIDE = 0.7;
 /** How long a burst's sweep stays open, catching whatever the net passes. */
 /**
  * The sweep's net: open for `time` seconds, reaching the arms' length times `reach` plus the bell
@@ -498,6 +502,10 @@ export class World {
   /** Deepest hundred meters reached this run, for exploration instinct. */
   private depthMark = 0;
   private lashCd = 0;
+  /** Seconds left on a Jet press that arrived while every charge was spent. */
+  private jetQueued = 0;
+  /** The outward normal of the last reef the player touched (zero when clear). */
+  private reefN = { x: 0, y: 0 };
 
   constructor(opts: WorldOptions = {}) {
     const seed = opts.seed ?? Math.floor(Math.random() * 1e9);
@@ -858,7 +866,7 @@ export class World {
   }
 
   /** Pushes a circle out of any coral it overlaps. Returns true on contact. */
-  private collideCoral(e: { x: number; y: number; vx: number; vy: number }, r: number): boolean {
+  private collideCoral(e: { x: number; y: number; vx: number; vy: number }, r: number, normal?: { x: number; y: number }): boolean {
     const cell = this.coralNear(e.x, e.y);
     if (!cell) return false;
     let hit = false;
@@ -874,6 +882,10 @@ export class World {
         const ny = d > 0.01 ? dy / d : -1;
         e.x = c.x + nx * min;
         e.y = c.y + ny * min;
+        if (normal) {
+          normal.x = nx;
+          normal.y = ny;
+        }
         const vn = e.vx * nx + e.vy * ny;
         if (vn < 0) {
           e.vx -= vn * nx * 1.3;
@@ -1112,7 +1124,9 @@ export class World {
       }
     } else p.recharge = 0;
 
-    if (input.burst && p.charges >= 1) {
+    if (input.burst) this.jetQueued = JET_BUFFER;
+    if (this.jetQueued > 0 && p.charges >= 1) {
+      this.jetQueued = 0;
       p.charges -= 1;
       let dx = ax;
       let dy = ay;
@@ -1140,7 +1154,23 @@ export class World {
       this.sweepCount = 0;
       this.lastBurstT = this.time;
     }
+    this.jetQueued = Math.max(0, this.jetQueued - dt);
     p.burstT = Math.max(0, p.burstT - dt);
+
+    // Steering into reef slides along it, toward the side the stroke leans (or away from the rock's middle when it is dead on).
+    const rn = this.reefN;
+    if ((rn.x || rn.y) && mag > 0.2) {
+      const into = ax * rn.x + ay * rn.y;
+      if (into < -0.2 * mag) {
+        const tx = -rn.y;
+        const ty = rn.x;
+        let side = ax * tx + ay * ty;
+        if (Math.abs(side) < 0.15 * mag) side = (tx * (p.x - this.width / 2) >= 0 ? -1 : 1) * 0.15 * mag;
+        const push = accel * REEF_SLIDE * Math.min(1, -into / mag) * Math.sign(side) * dt;
+        p.vx += tx * push;
+        p.vy += ty * push;
+      }
+    }
 
     p.vx -= p.vx * drag * dt;
     p.vy -= p.vy * drag * dt;
@@ -1168,7 +1198,8 @@ export class World {
 
     if (sp > 25) p.heading = angleLerp(p.heading, Math.atan2(p.vy, p.vx), 1 - Math.exp(-6 * dt));
 
-    this.collideCoral(p, p.r);
+    this.reefN.x = this.reefN.y = 0;
+    this.collideCoral(p, p.r, this.reefN);
     p.x = clamp(p.x, p.r, this.width - p.r);
     p.y = clamp(p.y, p.r + 30, this.height - p.r);
     this.applyPressure(dt);
